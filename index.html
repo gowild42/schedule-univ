@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대학별 고사 일정</title>
+<style>
+:root{--bg:#fff;--fg:#1f2937;--mut:#6b7280;--line:#e5e7eb;--pri:#2563eb;--card:#f9fafb}
+@media (prefers-color-scheme:dark){:root{--bg:#111827;--fg:#f3f4f6;--mut:#9ca3af;--line:#374151;--card:#1f2937}}
+body{margin:0 auto;background:var(--bg);color:var(--fg);font-family:-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;max-width:760px;padding:14px}
+h1{font-size:19px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:9px 14px}
+button.p{background:var(--pri);color:#fff;border-color:var(--pri)}
+button:disabled{opacity:.5}
+input{width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.view{display:none}.msg{color:var(--mut);font-size:13px;margin:8px 0}
+.bar{display:flex;align-items:center;justify-content:space-between;margin:8px 0}.bar b{font-size:20px}
+.g{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.h{text-align:center;font-size:12px;color:var(--mut)}
+.c{min-height:84px;border:1px solid var(--line);border-radius:6px;padding:3px;font-size:11px;overflow:hidden;cursor:pointer;background:var(--card)}
+.c.o{opacity:.3;cursor:default}.d{font-size:12px;font-weight:600}
+.e{border-radius:4px;padding:2px 3px;margin-top:2px;color:#fff;line-height:1.3;word-break:keep-all;overflow-wrap:anywhere}
+.e .n{font-weight:400;opacity:.95;border-top:1px solid rgba(255,255,255,.5);margin-top:1px;padding-top:1px}
+.t0{background:#2563eb}.t1{background:#d97706}.t2{background:#059669}.t3{background:#dc2626}
+.lg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;margin:10px 0;color:var(--mut)}
+.lg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.ty{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.ty button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+label{display:block;margin:14px 0 6px;font-weight:600}
+.row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:7px 0;gap:8px}
+.code{font-size:34px;letter-spacing:6px;font-weight:700;color:var(--pri)}
+</style></head><body>
+
+<div id="home" class="view">
+  <h1>📅 대학별 고사 일정</h1>
+  <label>학급 코드 (6자리)</label>
+  <input id="codeIn" maxlength="6" placeholder="선생님이 알려준 코드" autocapitalize="characters" style="text-transform:uppercase">
+  <button class="p" id="enter" style="width:100%;margin-top:10px;padding:12px">입장하기</button>
+  <div class="msg" id="homeMsg"></div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:24px 0">
+  <button id="gl">👩‍🏫 교사 로그인 (Google)</button>
+</div>
+
+<div id="teacher" class="view">
+  <h1>교사 페이지</h1>
+  <div id="myClasses"></div>
+  <button class="p" id="mk">+ 새 학급 코드 만들기</button>
+  <button id="out" style="margin-left:6px">로그아웃</button>
+  <div class="msg" id="tMsg"></div>
+</div>
+
+<div id="cal" class="view">
+  <div class="bar"><button id="back">← 처음으로</button><span id="who" class="msg"></span></div>
+  <div class="bar"><button id="pv">◀</button><b id="ttl"></b><button id="nx">▶</button></div>
+  <div class="g" id="grid"></div>
+  <div class="lg"><span><i class="t0"></i>면접</span><span><i class="t1"></i>논술</span><span><i class="t2"></i>실기</span><span><i class="t3"></i>합격발표</span></div>
+  <div class="msg">날짜를 누르면 일정 등록 화면으로 이동합니다. 좌우로 밀어서 달을 넘길 수도 있어요.</div>
+</div>
+
+<div id="form" class="view">
+  <div class="bar"><button id="bk">← 달력</button><b id="fd"></b></div>
+  <div id="ex"></div>
+  <label>이름</label><input id="nm" maxlength="10" placeholder="ex.홍길동">
+  <label>대학명</label><input id="un" maxlength="20" placeholder="ex.한국대">
+  <div class="msg" style="margin-top:4px">'대학교'는 빼고 써도 되고, 써도 같은 대학으로 인식돼요.</div>
+  <label>대학별 고사</label><div class="ty" id="ty"></div>
+  <div class="msg" id="st"></div>
+  <button class="p" id="sv" style="width:100%;margin-top:10px;padding:12px">등록하기</button>
+</div>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,signInAnonymously,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,collection,onSnapshot,writeBatch,deleteDoc,query,where,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ★★★ 여기를 Firebase 콘솔에서 복사한 내용으로 교체하세요 (따옴표는 지우지 마세요) ★★★
+const firebaseConfig = {
+  apiKey: "AIzaSyClWdIzEIzHtKiPx-qIDaYcAuG80ws51TU",
+  authDomain: "schedule-univ-4242.firebaseapp.com",
+  projectId: "schedule-univ-4242",
+  storageBucket: "schedule-univ-4242.firebasestorage.app",
+  messagingSenderId: "579826885641",
+  appId: "1:579826885641:web:66a91ebb0dfcdebd8504d8"
+};
+
+const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app);
+const TY=["면접","논술","실기","합격발표"];
+const $=id=>document.getElementById(id), pad=n=>String(n).padStart(2,"0");
+let user=null, code=null, isAdmin=false, evs=[], names={}, unsubs=[];
+let Y=2026, M=9, sel=null, type=0;
+
+// 대학명 정리: 공백 제거, 끝의 '대학교'/'대학' → '대' (한국대학교 = 한국대)
+const norm=s=>s.replace(/\s+/g,"").replace(/대학교$/,"대").replace(/대학$/,"대");
+const gkey=e=>norm(e.univ).toLowerCase()+"|"+e.type;
+
+function show(v){["home","teacher","cal","form"].forEach(x=>$(x).style.display=x===v?"block":"none")}
+function unsub(){unsubs.forEach(f=>f());unsubs=[]}
+
+onAuthStateChanged(auth,async u=>{
+  user=u;
+  if(u&&!u.isAnonymous&&!code){await loadClasses();show("teacher")}
+  else if(!code) show("home");
+});
+
+$("gl").onclick=async()=>{try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){$("homeMsg").textContent="로그인 실패: "+e.code}};
+$("out").onclick=async()=>{unsub();await signOut(auth);code=null;show("home")};
+
+async function loadClasses(){
+  const s=await getDocs(query(collection(db,"classes"),where("ownerUid","==",user.uid)));
+  $("myClasses").innerHTML=s.empty?'<p class="msg">아직 학급 코드가 없어요. 아래 버튼을 눌러 만드세요.</p>':'<p class="msg">학생들에게 아래 6자리 코드를 알려주세요.</p>';
+  s.forEach(d=>{
+    const r=document.createElement("div");r.className="row";
+    const c=document.createElement("span");c.className="code";c.textContent=d.id;
+    const b=document.createElement("button");b.textContent="달력 보기";b.onclick=()=>openClass(d.id);
+    r.append(c,b);$("myClasses").appendChild(r);
+  });
+}
+$("mk").onclick=async()=>{
+  try{
+    const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let c;do{c=Array.from({length:6},()=>A[Math.floor(Math.random()*A.length)]).join("")}
+    while((await getDoc(doc(db,"classes",c))).exists());
+    await setDoc(doc(db,"classes",c),{ownerUid:user.uid,createdAt:Date.now()});
+    await loadClasses();
+  }catch(e){$("tMsg").textContent="만들기 실패: "+e.code}
+};
+
+async function enter(){
+  const c=$("codeIn").value.trim().toUpperCase();
+  if(c.length!==6){$("homeMsg").textContent="코드 6자리를 입력해 주세요.";return}
+  $("homeMsg").textContent="확인 중...";
+  try{
+    if(!auth.currentUser) await signInAnonymously(auth);
+    await openClass(c);
+  }catch(e){$("homeMsg").textContent="입장 실패: "+e.code}
+}
+$("enter").onclick=enter;
+$("codeIn").addEventListener("keydown",e=>{if(e.key==="Enter")enter()});
+
+async function openClass(c){
+  const d=await getDoc(doc(db,"classes",c));
+  if(!d.exists()){$("homeMsg").textContent="없는 학급 코드예요. 다시 확인해 주세요.";show("home");return}
+  unsub();code=c;user=auth.currentUser;evs=[];names={};
+  isAdmin=!!user&&!user.isAnonymous&&d.data().ownerUid===user.uid;
+  $("who").textContent=(isAdmin?"관리자 화면 · ":"")+"학급 코드 "+c;
+  unsubs.push(onSnapshot(collection(db,"classes",c,"events"),s=>{evs=s.docs.map(x=>({id:x.id,...x.data()}));render();drawEx()}));
+  if(isAdmin)unsubs.push(onSnapshot(collection(db,"classes",c,"names"),s=>{names={};s.forEach(x=>names[x.id]=x.data().name);render();drawEx()}));
+  render();show("cal");
+}
+$("back").onclick=()=>{
+  unsub();code=null;
+  if(user&&!user.isAnonymous){loadClasses();show("teacher")}else show("home");
+};
+
+// 같은 날짜·같은 대학·같은 고사는 하나로 묶기
+function groups(date){
+  const m=new Map();
+  evs.filter(e=>e.date===date).forEach(e=>{
+    const k=gkey(e);
+    if(!m.has(k))m.set(k,{univ:norm(e.univ),type:e.type,ids:[]});
+    m.get(k).ids.push(e.id);
+  });
+  return [...m.values()].sort((a,b)=>a.type-b.type||a.univ.localeCompare(b.univ,"ko"));
+}
+function nameList(g){return g.ids.map(i=>names[i]).filter(Boolean).join(", ")}
+
+function render(){
+  $("ttl").textContent=Y+"년 "+(M+1)+"월";
+  let h=["일","월","화","수","목","금","토"].map(x=>`<div class="h">${x}</div>`).join("");
+  for(let i=0;i<new Date(Y,M,1).getDay();i++)h+='<div class="c o"></div>';
+  for(let d=1;d<=new Date(Y,M+1,0).getDate();d++){
+    const k=`${Y}-${pad(M+1)}-${pad(d)}`;
+    const chips=groups(k).map(g=>{
+      const el=document.createElement("div");el.className="e t"+g.type;
+      const a=document.createElement("div");a.textContent=g.univ+" "+TY[g.type];el.appendChild(a);
+      if(isAdmin){const n=nameList(g);if(n){const b=document.createElement("div");b.className="n";b.textContent=n;el.appendChild(b)}}
+      return el.outerHTML}).join("");
+    h+=`<div class="c" data-d="${k}"><div class="d">${d}</div>${chips}</div>`;
+  }
+  $("grid").innerHTML=h;
+}
+function go(n){M+=n;if(M<0){M=11;Y--}if(M>11){M=0;Y++}render()}
+$("pv").onclick=()=>go(-1);$("nx").onclick=()=>go(1);
+let sx=null;
+$("cal").addEventListener("touchstart",e=>sx=e.touches[0].clientX,{passive:true});
+$("cal").addEventListener("touchend",e=>{if(sx===null)return;const dx=e.changedTouches[0].clientX-sx;sx=null;if(Math.abs(dx)>60)go(dx<0?1:-1)});
+$("grid").onclick=e=>{const c=e.target.closest("[data-d]");if(c){sel=c.dataset.d;const[y,m,d]=sel.split("-");$("fd").textContent=`${y}년 ${+m}월 ${+d}일`;$("st").textContent="";drawEx();show("form")}};
+$("bk").onclick=()=>show("cal");
+
+function drawEx(){
+  if(!sel)return;
+  $("ex").innerHTML="";
+  if(isAdmin){
+    const es=evs.filter(e=>e.date===sel).sort((a,b)=>a.type-b.type||norm(a.univ).localeCompare(norm(b.univ),"ko"));
+    if(es.length)$("ex").innerHTML='<div class="msg">이 날짜에 등록된 일정 (대학명 / 고사 / 학생)</div>';
+    es.forEach(e=>{
+      const r=document.createElement("div");r.className="row";
+      const s=document.createElement("span");s.textContent=`${norm(e.univ)} / ${TY[e.type]} / ${names[e.id]||"(이름 없음)"}`;r.appendChild(s);
+      const b=document.createElement("button");b.textContent="삭제";
+      b.onclick=async()=>{if(confirm("이 일정을 삭제할까요?")){try{await deleteDoc(doc(db,"classes",code,"events",e.id));await deleteDoc(doc(db,"classes",code,"names",e.id))}catch(x){alert("삭제 실패: "+x.code)}}};
+      r.appendChild(b);$("ex").appendChild(r);
+    });
+  }else{
+    const gs=groups(sel);
+    if(gs.length)$("ex").innerHTML='<div class="msg">이 날짜에 등록된 일정</div>';
+    gs.forEach(g=>{const r=document.createElement("div");r.className="row";r.textContent=`${g.univ} / ${TY[g.type]}`;$("ex").appendChild(r)});
+  }
+}
+TY.forEach((t,i)=>{const b=document.createElement("button");b.textContent=t;b.onclick=()=>{type=i;paint()};$("ty").appendChild(b)});
+function paint(){[...$("ty").children].forEach((b,i)=>b.classList.toggle("on",i===type))}paint();
+
+$("sv").onclick=async()=>{
+  const nm=$("nm").value.trim(),un=norm($("un").value.trim());
+  if(!nm||!un){$("st").textContent="이름과 대학명을 모두 입력해 주세요.";return}
+  $("sv").disabled=true;
+  try{
+    const id=doc(collection(db,"classes",code,"events")).id, b=writeBatch(db);
+    b.set(doc(db,"classes",code,"events",id),{date:sel,univ:un,type});
+    b.set(doc(db,"classes",code,"names",id),{name:nm});
+    await b.commit();
+    $("un").value="";$("st").textContent="✅ 등록되었습니다!";setTimeout(()=>show("cal"),700);
+  }catch(e){$("st").textContent="등록 실패: "+e.code}
+  $("sv").disabled=false;
+};
+show("home");
+</script></body></html>
